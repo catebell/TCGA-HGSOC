@@ -1,0 +1,1 @@
+"Metadata" JSON file downloaded from GDC must be inside this directory :)
