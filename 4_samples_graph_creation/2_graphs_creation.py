@@ -1,18 +1,20 @@
 import os
+import shutil
+
 import numpy as np
 import pandas as pd
 import torch
 from torch_geometric.data import Data
 from tqdm import tqdm
 
+import task_target
 from data_matrix_creation import process_omics_folder
 from ppi_build import build_edge_index
 
 """"" Data convertion in PyTorch Geometric Data objects that will be passed to the GAT.
 Each graph (Data) will represent a single tissue (its genes = nodes, ppi = edges, RNA/CNV values = node features) """""
 
-# TODO per ora bisogna eliminare le cartelle train/test/val a mano prima di ricreare i grafi
-
+TASK = task_target.TASK
 
 path_to_RNA_dir = os.path.join("..", "2_preprocessing", "preprocessed_RNA")
 path_to_CNV_dir = os.path.join("..", "2_preprocessing", "preprocessed_CNV")
@@ -122,7 +124,9 @@ for split_name, path_to_mapping_file in splits.items():
     file_mapping_df = pd.read_csv(path_to_mapping_file)
 
     path_to_save_dir = os.path.join(path_to_output_dir, split_name)
-    os.makedirs(path_to_save_dir, exist_ok=True)
+    if os.path.exists(path_to_save_dir):
+        shutil.rmtree(path_to_save_dir)  # remove dir if already exists
+    os.makedirs(path_to_save_dir)
 
     process_and_save_subset(file_mapping_df, e_index, gene_to_idx, path_to_save_dir)
     print(f"Save completed for {split_name} in {path_to_save_dir}\n")

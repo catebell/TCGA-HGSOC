@@ -128,6 +128,7 @@ def map_to_num_and_fill_static(df_clean):
         }
         df_mapped["vital_status"] = df_mapped["vital_status"].map(vital_status_mapping)
         df_mapped = infer_missing_vital_status(df_mapped)
+        df_mapped = df_mapped.rename(columns={'vital_status': 'deceased'})
 
     if "clinical_stage" in df_mapped.columns:
         stage_mapping = {
@@ -178,13 +179,14 @@ def map_to_num_and_fill_static(df_clean):
 
     """"" days_to_death and days_to_last followup unified in --> Overall Survival """""
 
-    if all(col in df_mapped.columns for col in ['vital_status', 'days_to_death', 'days_to_last_followup']):
+    if all(col in df_mapped.columns for col in ['deceased', 'days_to_death', 'days_to_last_followup']):
         df_mapped['overall_survival_days'] = np.where(
-            df_mapped['vital_status'] == 1,
+            df_mapped['deceased'] == 1,
             df_mapped['days_to_death'],
             df_mapped['days_to_last_followup']
         ).astype(float)
         df_mapped = df_mapped.drop(columns=['days_to_death', 'days_to_last_followup'])
+        df_mapped = df_mapped.drop(df_mapped[df_mapped['overall_survival_days'] < 0].index)  # to be sure
 
     return df_mapped
 

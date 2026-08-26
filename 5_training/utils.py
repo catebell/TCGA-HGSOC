@@ -131,6 +131,6 @@ def print_details(dataset):
     print(f'Number of edges: {dataset[0].num_edges}')
     print(f'Average node degree: {dataset[0].num_edges / dataset[0].num_nodes:.2f}')
     print(f'Has isolated nodes: {dataset[0].has_isolated_nodes()}')
-    print(f'Has self-loops: {dataset[0].has_self_loops()}')
+    #print(f'Has self-loops: {dataset[0].has_self_loops()}')  # added internally during GNN forward, checked in gatv2_conv module
     print(f'Is undirected: {dataset[0].is_undirected()}')
     print()

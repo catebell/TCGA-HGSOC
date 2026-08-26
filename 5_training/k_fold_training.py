@@ -4,7 +4,6 @@ import os
 import numpy as np
 import pandas as pd
 import torch
-from sklearn.metrics import roc_auc_score, precision_score, recall_score, f1_score
 from sklearn.model_selection import StratifiedKFold
 from torch.utils.data import Subset
 from torch_geometric.loader import DataLoader
@@ -14,6 +13,8 @@ import task_target
 from utils import print_details, nan_imputation_and_features_normalization
 from PatientTissueDataset import PatientTissueDataset
 from MultiOmicGAT import MultiOmicGAT
+from MultiOmicGAT_Survival import MultiOmicGAT_Survival, CoxPHLoss
+from train_functions import train_epoch, evaluate, train_epoch_survival, evaluate_survival
 
 
 logging.basicConfig(
@@ -31,9 +32,15 @@ logging.info("Device: " + str(device))
 
 """"" set general parameters """""
 
-target_column = task_target.TARGET_COL
+task = task_target.TASK
+target_column = ""
 
-logging.info(f"Starting training using target feature: {target_column}\n")
+if task == 'classification':
+    target_column = task_target.TARGET_COL
+    logging.info(f"Starting training using target feature: {target_column}\n")
+elif task == 'survival':
+    target_column = task_target.SURVIVAL_EVENT_COL  # placeholder, won't actually be used here
+    logging.info(f"Starting training on survival prediction\n")
 
 path_to_clinical = os.path.join("..", "2_preprocessing", "preprocessed_clinical_data.tsv")
 path_to_clinical_test = os.path.join("..", "3_train_test_split", "processed_clinical.tsv")  # TODO levare
@@ -53,28 +60,18 @@ df_clinical_preprocessed = pd.read_csv(path_to_clinical, sep="\t")
 
 # reverse preprocessing formatting
 df_clinical_preprocessed = df_clinical_preprocessed.replace(-1, np.nan)
-df_clinical_preprocessed = df_clinical_preprocessed.dropna(subset=[target_column])
-df_clinical_preprocessed[target_column] = df_clinical_preprocessed[target_column].astype(int)
 
+if task == 'classification':
+    df_clinical_preprocessed = df_clinical_preprocessed.dropna(subset=[target_column])
+    df_clinical_preprocessed[target_column] = df_clinical_preprocessed[target_column].astype(int)
 
-""""" loading datasets """""
-
-'''
-logging.info("Train Dataset init...")
-train_dataset = PatientTissueDataset(paths_graphs_splits.get("train"), df_clinical_preprocessed, target_col=target_column)
-
-logging.info("Val Dataset init...")
-val_dataset = PatientTissueDataset(paths_graphs_splits.get("val"), df_clinical_preprocessed, target_col=target_column)
-
-full_train_dataset = train_dataset + val_dataset
-'''
 
 logging.info("Train + Val Dataset init...")
-train_val_dataset = PatientTissueDataset(paths_graphs_splits.get("train_val"), df_clinical_preprocessed, target_col=target_column)
+train_val_dataset = PatientTissueDataset(paths_graphs_splits.get("train_val"), df_clinical_preprocessed, task=task, target_col=target_column)
 
 logging.info("Test Dataset init...")
 df_clinical_test = pd.read_csv(path_to_clinical_test, sep="\t")
-test_dataset = PatientTissueDataset(paths_graphs_splits.get("test"), df_clinical_test, target_col=target_column)
+test_dataset = PatientTissueDataset(paths_graphs_splits.get("test"), df_clinical_test, task=task, target_col=target_column)
 test_loader = DataLoader(test_dataset, batch_size=16, shuffle=False)
 
 print_details(train_val_dataset)
@@ -89,101 +86,44 @@ logging.info(f"Num Clinical Features found : {num_clinical_features}")
 epochs = 50
 
 
-""""" functions """""
-
-def train_epoch(model, loader, optimizer, criterion):
-    model.train()
-    total_loss, correct, total = 0, 0, 0
-
-    for data in loader:  # data = batch of graphs
-        data = data.to(device)
-        optimizer.zero_grad()
-        out, _ = model(data.x, data.edge_index, data.batch, data.clinical_x)
-
-        loss = criterion(out, data.y)
-        loss.backward()
-        optimizer.step()
-
-        total_loss += loss.item() * data.num_graphs
-        pred = out.argmax(dim=1)
-        correct += (pred == data.y).sum().item()
-
-        total += data.num_graphs
-
-    return total_loss / total, correct / total
-
-
-def evaluate(model, loader, criterion):
-    model.eval()
-    total_loss, correct, total = 0, 0, 0
-    all_targets, all_preds, all_probs = [], [], []
-
-    with torch.no_grad():
-        for data in loader:
-            data = data.to(device)
-            out, _ = model(data.x, data.edge_index, data.batch, data.clinical_x)
-            loss = criterion(out, data.y)
-            total_loss += loss.item() * data.num_graphs
-
-            probs = torch.softmax(out, dim=1)
-            pred = out.argmax(dim=1)  # class with the highest prob
-            correct += (pred == data.y).sum().item()
-
-            all_targets.extend(data.y.cpu().numpy())
-            all_preds.extend(pred.cpu().numpy())
-            all_probs.extend(probs.cpu().numpy())
-
-            total += data.num_graphs
-
-    all_targets = np.array(all_targets)
-    all_preds = np.array(all_preds)
-    all_probs = np.array(all_probs)
-
-    num_classes_in_target = len(np.unique(all_targets))
-    if num_classes_in_target == 2:
-        auc_val = roc_auc_score(all_targets, all_probs[:, 1])
-    elif num_classes_in_target > 2:  # Multi-Class AUC --> OvR strategy (One-vs-Rest)
-        auc_val = roc_auc_score(all_targets, all_probs, multi_class='ovr')
-    else:
-        auc_val = 0.0
-
-    metrics = {
-        'acc': np.mean(all_preds == all_targets),  # acc = correct/total
-        'precision': precision_score(all_targets, all_preds, average='macro', zero_division=0),
-        'recall': recall_score(all_targets, all_preds, average='macro', zero_division=0),
-        'f1': f1_score(all_targets, all_preds, average='macro', zero_division=0),
-        'auc': auc_val,
-    }
-
-    return total_loss/total, metrics
-
-
 """"" k-fold train loop """""
 
-y_labels = torch.tensor([train_val_dataset[i].y.item() for i in range(len(train_val_dataset))])
-unique_labels = torch.unique(y_labels)
-logging.info(f"Unique labels found in dataset: {unique_labels}")
-num_classes = len(unique_labels)
+criterion = None
+y_skf = None
 
-# different weights to classes based on number of samples
+if task == 'classification':
+    y_labels = torch.tensor([train_val_dataset[i].y.item() for i in range(len(train_val_dataset))])
+    y_skf = y_labels
+    unique_labels = torch.unique(y_labels)
+    logging.info(f"Unique labels found in dataset: {unique_labels}")
+    num_classes = len(unique_labels)
 
-class_counts = torch.bincount(y_labels)
-total_samples = len(y_labels)
-class_weights = total_samples / (len(class_counts) * class_counts.float())
-class_weights = class_weights.to(device)
+    # different weights to classes based on number of samples
 
-logging.info("classes_counts: ")
-logging.info(class_counts)
+    class_counts = torch.bincount(y_labels)
+    total_samples = len(y_labels)
+    class_weights = total_samples / (len(class_counts) * class_counts.float())
+    class_weights = class_weights.to(device)
 
-logging.info("weights: ")
-logging.info(class_weights)
+    logging.info("classes_counts: ")
+    logging.info(class_counts)
 
-criterion = torch.nn.CrossEntropyLoss(weight=class_weights)
+    logging.info("weights: ")
+    logging.info(class_weights)
+
+    criterion = torch.nn.CrossEntropyLoss(weight=class_weights)
+
+elif task == 'survival':
+    # stratification based on event (0 = censured, 1 = event)
+    y_events = torch.tensor([train_val_dataset[i].y_event.item() for i in range(len(train_val_dataset))])
+    y_skf = y_events
+
+    criterion = CoxPHLoss()
 
 skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=7)
 fold_results = []
 
-for fold, (train_idx, val_idx) in enumerate(skf.split(train_val_dataset, y_labels)):
+for fold, (train_idx, val_idx) in enumerate(skf.split(train_val_dataset, y_skf)):
     logging.info(f"\n--- FOLD {fold + 1} ---\n")
 
     """"" clinical fold specific processing """""
@@ -220,36 +160,75 @@ for fold, (train_idx, val_idx) in enumerate(skf.split(train_val_dataset, y_label
     train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True)
     val_loader = DataLoader(val_dataset, batch_size=16, shuffle=False)
 
-    model = MultiOmicGAT(
-        in_features=num_genes_features,
-        hidden_dim=64,
-        out_channels=num_classes,
-        heads=4,
-        dropout=0.2,
-        num_clinical_features=num_clinical_features,
-    ).to(device)
-    logging.info(model)
+    model = None
+
+    if task == 'classification':
+        model = MultiOmicGAT(
+            in_features=num_genes_features,
+            hidden_dim=64,
+            out_channels=num_classes,
+            heads=4,
+            dropout=0.3,
+            num_clinical_features=num_clinical_features,
+        ).to(device)
+
+    elif task == 'survival':
+        model = MultiOmicGAT_Survival(
+            in_features=num_genes_features,
+            hidden_dim=64,
+            out_channels=1,
+            heads=4,
+            dropout=0.3,
+            num_clinical_features=num_clinical_features,
+        ).to(device)
+
+    logging.info(str(model) + "\n")
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3, weight_decay=1e-4)
+    #scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=10)
 
-    best_val_loss = float('inf')
+    # possible metrics to evaluate for improvement
+    best_val_loss = float('inf')  # minimizing loss
+    best_val_c_index = 0.0  # maximizing C-index
     early_stopping_counter = 0
 
     for epoch in tqdm(range(1, epochs + 1)):
-        train_loss, train_acc = train_epoch(model, train_loader, optimizer, criterion)
-        val_loss, val_metrics = evaluate(model, val_loader, criterion)
-        logging.info(f"Epoch {epoch:02d} | Train Loss: {train_loss:.4f}, Train Acc: {train_acc:.4f} | Val Loss: {val_loss:.4f}")
-        logging.info(f"Val metrics: Acc = {val_metrics['acc']:.4f} | F1 = {val_metrics['f1']:.4f}, AUC = {val_metrics['auc']:.4f}\n")
+        if task == 'classification':
+            train_loss, train_acc = train_epoch(device, model, train_loader, optimizer, criterion)
+            val_loss, val_metrics = evaluate(device, model, val_loader, criterion)
 
-        if val_loss < best_val_loss:
-            #logging.info(f"IMPROVEMENT! Epoch {epoch:02d} | Train Loss: {train_loss:.4f}, Train Acc: {train_acc:.4f} | Val Loss: {val_loss:.4f}, Val Acc: {val_acc:.4f}")
-            logging.info("IMPROVEMENT!\n")
-            best_val_loss = val_loss
-            torch.save(model.state_dict(), os.path.join(dir_to_save, f"best_MultiOmicGat_fold{fold+1}.pt"))
-            early_stopping_counter = 0
+            #scheduler.step(val_loss)  # update learning rate
+
+            logging.info(f"Epoch {epoch:02d} | Train Loss: {train_loss:.4f}, Train Acc: {train_acc:.4f} | Val Loss: {val_loss:.4f}")
+            logging.info(f"Val metrics: Acc = {val_metrics['acc']:.4f} | F1 = {val_metrics['f1']:.4f}, AUC = {val_metrics['auc']:.4f}\n")
+
+            if val_loss < best_val_loss:
+                logging.info("Loss IMPROVEMENT!\n")
+                best_val_loss = val_loss
+                torch.save(model.state_dict(), os.path.join(dir_to_save, f"best_MultiOmicGat_fold{fold + 1}.pt"))
+                early_stopping_counter = 0
+            else:
+                early_stopping_counter += 1
+
+        elif task == 'survival':
+            train_loss = train_epoch_survival(device, model, train_loader, optimizer, criterion)
+            val_loss, val_metrics = evaluate_survival(device, model, val_loader, criterion)
+            val_c_index = val_metrics['c_index']
+
+            logging.info(
+                f"Epoch {epoch:02d} | Train Loss: {train_loss:.4f} | "
+                f"Val Loss: {val_loss:.4f} | Val C-Index: {val_c_index:.4f}"
+            )
+
+            if val_c_index > best_val_c_index:
+                logging.info(
+                    f"--> C-Index IMPROVEMENT!: {best_val_c_index:.4f} -> {val_c_index:.4f}\n")
+                best_val_c_index = val_c_index
+                torch.save(model.state_dict(), os.path.join(dir_to_save, f"best_survival_GAT_fold{fold + 1}.pt"))
+                early_stopping_counter = 0
+            else:
+                early_stopping_counter += 1
 
         if early_stopping_counter > 20:
             logging.info("--- Stopping training due to early stopping, 20 epochs without improvement ---\n")
             break
-        else:
-            early_stopping_counter += 1
