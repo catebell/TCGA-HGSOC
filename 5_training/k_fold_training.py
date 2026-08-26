@@ -13,7 +13,7 @@ import task_target
 from utils import print_details, nan_imputation_and_features_normalization
 from PatientTissueDataset import PatientTissueDataset
 from MultiOmicGAT import MultiOmicGAT
-from MultiOmicGAT_Survival import MultiOmicGAT_Survival, CoxPHLoss
+from MultiOmicGATSurvival import MultiOmicGATSurvival, CoxPHLoss
 from train_functions import train_epoch, evaluate, train_epoch_survival, evaluate_survival
 
 
@@ -81,7 +81,7 @@ print_details(train_val_dataset)
 
 num_genes_features = 10  # multiomics feature vector
 num_clinical_features = len(train_val_dataset.clinical_feature_cols)  # total clinical features without the one to predict
-logging.info(f"Num Clinical Features found : {num_clinical_features}")
+logging.info(f"Clinical Features found : {num_clinical_features} \n {train_val_dataset.clinical_feature_cols}")
 
 epochs = 50
 
@@ -160,8 +160,8 @@ for fold, (train_idx, val_idx) in enumerate(skf.split(train_val_dataset, y_skf))
     train_dataset = Subset(train_val_dataset, train_idx)
     val_dataset = Subset(train_val_dataset, val_idx)
 
-    train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True)
-    val_loader = DataLoader(val_dataset, batch_size=16, shuffle=False)
+    train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True, num_workers=2)
+    val_loader = DataLoader(val_dataset, batch_size=16, shuffle=False, num_workers=2)
 
     model = None
 
@@ -176,7 +176,7 @@ for fold, (train_idx, val_idx) in enumerate(skf.split(train_val_dataset, y_skf))
         ).to(device)
 
     elif task == 'survival':
-        model = MultiOmicGAT_Survival(
+        model = MultiOmicGATSurvival(
             in_features=num_genes_features,
             hidden_dim=64,
             out_channels=1,
@@ -187,8 +187,12 @@ for fold, (train_idx, val_idx) in enumerate(skf.split(train_val_dataset, y_skf))
 
     logging.info(str(model) + "\n")
 
-    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3, weight_decay=1e-4)
-    #scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=10)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=0.001, weight_decay=1e-4)
+
+    if task == 'classification':
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=10)
+    elif task == 'survival':
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='max', factor=0.5, patience=5)
 
     # possible metrics to evaluate for improvement
     best_val_loss = float('inf')  # minimizing loss
@@ -200,7 +204,7 @@ for fold, (train_idx, val_idx) in enumerate(skf.split(train_val_dataset, y_skf))
             train_loss, train_acc = train_epoch(device, model, train_loader, optimizer, criterion)
             val_loss, val_metrics = evaluate(device, model, val_loader, criterion)
 
-            #scheduler.step(val_loss)  # update learning rate
+            scheduler.step(val_loss)  # update learning rate
 
             logging.info(f"Epoch {epoch:02d} | Train Loss: {train_loss:.4f}, Train Acc: {train_acc:.4f} | Val Loss: {val_loss:.4f}")
             logging.info(f"Val metrics: Acc = {val_metrics['acc']:.4f} | F1 = {val_metrics['f1']:.4f}, AUC = {val_metrics['auc']:.4f}\n")
@@ -217,6 +221,8 @@ for fold, (train_idx, val_idx) in enumerate(skf.split(train_val_dataset, y_skf))
             train_loss = train_epoch_survival(device, model, train_loader, optimizer, criterion)
             val_loss, val_metrics = evaluate_survival(device, model, val_loader, criterion)
             val_c_index = val_metrics['c_index']
+
+            scheduler.step(val_c_index)  # update learning rate
 
             logging.info(
                 f"Epoch {epoch:02d} | Train Loss: {train_loss:.4f} | "

@@ -94,7 +94,7 @@ df_singles_merged = df_singles_merged.dropna(subset=cols_to_fetch)
 
 
 if TASK == 'survival':
-    df_singles_merged = df_singles_merged[df_singles_merged[TIME_COL] > 0]  # remove non valid times
+    df_singles_merged = df_singles_merged[df_singles_merged[TIME_COL] > 0]  # remove non-valid times
     df_singles_merged[TARGET_COL] = df_singles_merged[TARGET_COL].astype(int)
     print(f"--- Task: SURVIVAL ---")
     print(f"Event Col: '{TARGET_COL}' | Time Col: '{TIME_COL}'")

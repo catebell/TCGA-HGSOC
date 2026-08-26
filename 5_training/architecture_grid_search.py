@@ -14,7 +14,7 @@ import task_target
 from utils import  nan_imputation_and_features_normalization
 from PatientTissueDataset import PatientTissueDataset
 from MultiOmicGAT import MultiOmicGAT
-from MultiOmicGAT_Survival import MultiOmicGAT_Survival, CoxPHLoss
+from MultiOmicGATSurvival import MultiOmicGATSurvival, CoxPHLoss
 from train_functions import train_epoch, evaluate, train_epoch_survival, evaluate_survival
 
 
@@ -97,7 +97,7 @@ train_val_dataset = PatientTissueDataset(paths_graphs_splits.get("train_val"), d
 
 num_genes_features = 10  # multiomics feature vector
 num_clinical_features = len(train_val_dataset.clinical_feature_cols)  # total clinical features without the one to predict
-logging.info(f"Num Clinical Features found : {num_clinical_features}")
+logging.info(f"Clinical Features found : {num_clinical_features} \n {train_dataset.clinical_feature_cols}")
 
 y_target = None
 
@@ -186,7 +186,7 @@ def train_and_eval_model(params):
         ).to(device)
 
     elif task == 'survival':
-        model = MultiOmicGAT_Survival(
+        model = MultiOmicGATSurvival(
             in_features=num_genes_features,
             hidden_dim=params.get('hidden_channels'),
             out_channels=1,
