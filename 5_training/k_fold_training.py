@@ -137,11 +137,13 @@ for fold, (train_idx, val_idx) in enumerate(skf.split(train_val_dataset, y_skf))
 
     df_clinical_train_processed, scalers, imputers, categories = nan_imputation_and_features_normalization(
         df=df_clinical_train,
+        target_col=target_column,
         is_train=True,
     )
 
     df_clinical_val_processed = nan_imputation_and_features_normalization(
         df=df_clinical_val,
+        target_col=target_column,
         is_train=False,
         scalers=scalers,
         imputers=imputers,
@@ -151,6 +153,7 @@ for fold, (train_idx, val_idx) in enumerate(skf.split(train_val_dataset, y_skf))
     df_clinical_processed = pd.DataFrame(pd.concat([df_clinical_train_processed, df_clinical_val_processed]))
     train_val_dataset.update_clinical_df(df_clinical_processed)
 
+    num_clinical_features = len(train_val_dataset.clinical_feature_cols)  # TODO non necessario actually, le colonne da considerare non cambiano
 
     """"" fold specific dataset separation """""
 

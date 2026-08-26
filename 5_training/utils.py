@@ -6,12 +6,11 @@ from sklearn.preprocessing import StandardScaler, RobustScaler, MinMaxScaler
 import task_target
 
 task = task_target.TASK
-target_col = task_target.TARGET_COL
 
 
 """"" clinical postprocessing """""
 
-def nan_imputation_and_features_normalization(df, is_train=True, scalers=None, imputers=None, categories=None):
+def nan_imputation_and_features_normalization(df, target_col = None, is_train=True, scalers=None, imputers=None, categories=None):
     """
     Clinical nan imputation, reformatting, normalization and target column codification preventing data leakage.
     If is_train=True: compute parameters on Train data, else applies same parameters on Test/Validation data too.
