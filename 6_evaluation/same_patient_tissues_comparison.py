@@ -82,7 +82,7 @@ num_clinical_features = len(pairs_dataset.clinical_feature_cols)
 # model init with same training configuration
 if task == 'classification':
     model = MultiOmicGAT(
-Questi sono due paragrafi del contratto, cosa dice        in_node_features=num_genes_features,
+        in_node_features=num_genes_features,
         hidden_dim=64,
         out_channels=2,  # Adattare a seconda che l'head sia Survival (1) o Classification # todo check se è efficiente prenderlo automatizzato
         heads=4,
