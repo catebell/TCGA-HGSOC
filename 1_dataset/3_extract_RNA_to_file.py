@@ -1,10 +1,16 @@
 import glob
+import shutil
+
 import pandas as pd
 import os
 from tqdm import tqdm
 
-dir_RNA_data = "GDC-TCGA_Ovary"
+import task_target
+
+dir_RNA_data = f"GDC-TCGA_{task_target.DATASET}"
 dir_to_save = os.path.join("data_extracted", "RNA_extracted")
+if os.path.exists(dir_to_save):
+    shutil.rmtree(dir_to_save)  # remove dir if already exists
 os.makedirs(dir_to_save, exist_ok=True)
 
 # find all the files in the directory (recursively) with .tsv extension

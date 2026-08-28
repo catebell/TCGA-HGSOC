@@ -1,6 +1,7 @@
 import os
 from sklearn.preprocessing import MultiLabelBinarizer
 
+import task_target
 from utils_clinical_clean_methods import *
 
 path_to_clinical_file = os.path.join('..', '1_dataset', 'data_extracted', 'clinical_data.tsv')
@@ -11,6 +12,7 @@ df_clinical = pd.read_csv(path_to_clinical_file, sep="\t")
 df_clinical = df_clinical[~df_clinical['radiation_therapy'].fillna('').astype(str).str.contains('YES', case=False)]
 
 features_to_keep = [
+    "disease_code",  # TODO check for ovary
     "bcr_patient_barcode",
     "vital_status",
     "age_at_initial_pathologic_diagnosis",
@@ -121,6 +123,14 @@ def map_to_num_and_fill_static(df_clean):
 
     df_mapped = df_clean.copy()
 
+    if "disease_code" in df_mapped.columns:  # TODO automatizza
+        disease_code_mapping = {
+            "LUAD": 0,
+            "LUSC": 1,
+        }
+        df_mapped["disease_code"] = df_mapped["disease_code"].map(disease_code_mapping)
+
+
     if "vital_status" in df_mapped.columns:
         vital_status_mapping = {
             "Alive": 0,
@@ -218,15 +228,25 @@ def features_encoding(df_mapped):
     """"" One-Hot Encoding for mutually exclusive features """""
 
     cols_for_one_hot = ['initial_pathologic_diagnosis_method', 'person_neoplasm_cancer_status',]
+    existing_cols = [col for col in cols_for_one_hot if col in df_encoded.columns]
 
+    if existing_cols:
+        df_encoded = pd.get_dummies(
+            df_encoded,
+            columns=existing_cols,
+            drop_first=False,
+            dtype=int
+        )
+
+    '''  # TODO check con ovary se vengono codificati bene
     for col in cols_for_one_hot:
-        if col in df_encoded.columns:
-            df_encoded = pd.get_dummies(
-                df_encoded,
-                columns=cols_for_one_hot,
-                drop_first=False,  # set True if preparing for unregularized regression models
-                dtype=int,
-            )
+        df_encoded = pd.get_dummies(
+            df_encoded,
+            columns=cols_for_one_hot,
+            drop_first=False,  # set True if preparing for unregularized regression models
+            dtype=int,
+        )
+    '''
 
     return df_encoded
 
@@ -239,6 +259,23 @@ df_encoded = features_encoding(df_remapped)
 df_processed = df_encoded.fillna(-1)
 float_cols = df_processed.select_dtypes(include=['float']).columns
 df_processed[float_cols] = df_processed[float_cols].astype(int)
+
+
+""""" if classification, filter out patients with rare value in target class """""
+
+if task_target.TASK == 'classification':
+    target_col = task_target.TARGET_COL
+    min_samples = len(df_processed) * 0.10  # threshold with respect to patients total number
+
+    before = df_processed.copy()
+
+    df_processed = pd.DataFrame(df_processed.groupby(target_col).filter(lambda x: len(x) >= min_samples))
+
+    removed_values = set(before[target_col].unique()) - set(df_processed[target_col].unique())
+
+    if removed_values:
+        print(f"Removed target classes appearing in <10% of patients: {removed_values}")
+
 
 print("\nFinal Processed Data Shape:", df_processed.shape)
 print("\nColumns in final DataFrame:")

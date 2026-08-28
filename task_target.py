@@ -1,7 +1,10 @@
-#TASK = "classification"
-TASK = 'survival'
+DATASET = 'Lungs'  # [Ovary, Lungs]
 
-TARGET_COL = 'primary_therapy_resistance'
+TASK = "classification"
+#TASK = 'survival'
+
+#TARGET_COL = 'primary_therapy_resistance'
+TARGET_COL = 'disease_code'
 
 SURVIVAL_EVENT_COL = 'deceased'
 

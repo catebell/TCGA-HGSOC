@@ -1,10 +1,16 @@
 import glob
+import shutil
+
 import pandas as pd
 import os
 from tqdm import tqdm
 
-dir_CNV_data = "GDC-TCGA_Ovary"
+import task_target
+
+dir_CNV_data = f"GDC-TCGA_{task_target.DATASET}"
 dir_to_save_allelic = os.path.join("data_extracted", "CNV_extracted", "Allele_Specific")
+if os.path.exists(dir_to_save_allelic):
+    shutil.rmtree(dir_to_save_allelic)  # remove dir if already exists
 os.makedirs(dir_to_save_allelic, exist_ok=True)
 
 # find all the files in the directory (recursively) with .txt extension

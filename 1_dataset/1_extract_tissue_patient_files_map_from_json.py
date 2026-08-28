@@ -3,10 +3,12 @@ import os.path
 
 import pandas as pd
 
+import task_target
+
 path_to_metadata = ""
 path_to_save = ""
 
-with open(os.path.join(path_to_metadata, 'metadata.repository.Ovary.json'), 'r', encoding='utf-8') as f:
+with open(os.path.join(path_to_metadata, f'metadata.repository.{task_target.DATASET}.json'), 'r', encoding='utf-8') as f:
     metadata = json.load(f)
 
 # key = "PatientID_SampleType" (es. "TCGA-29-1692_01A")

@@ -95,14 +95,16 @@ def infer_missing_vital_status(df):
     else, if days_to_last_followup has a value --> alive;
     else, unknown --> remove patient
     """
+    if all(col in df.columns for col in ['days_to_death', 'days_to_last_followup']):
+        cond = (df['vital_status'].isna()) & (df['days_to_death'].notna())
+        df.loc[cond, 'vital_status'] = 1.0
 
-    cond = (df['vital_status'].isna()) & (df['days_to_death'].notna())
-    df.loc[cond, 'vital_status'] = 1.0
+        cond = df['vital_status'].isna() & df['days_to_death'].isna() & df['days_to_last_followup'].notna()
+        df.loc[cond, 'vital_status'] = 0.0
 
-    cond = df['vital_status'].isna() & df['days_to_death'].isna() & df['days_to_last_followup'].notna()
-    df.loc[cond, 'vital_status'] = 0.0
-
-    return df.dropna(subset=['vital_status'])
+        return df.dropna(subset=['vital_status'])
+    else:
+        return df
 
 
 def infer_missing_primary_therapy_outcome_success(row):

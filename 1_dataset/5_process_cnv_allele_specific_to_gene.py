@@ -7,11 +7,12 @@ allele_specific_cnv_dir = os.path.join("data_extracted", "CNV_extracted", "Allel
 dir_to_save = os.path.join('data_extracted', 'CNV_extracted', 'Gene_Level_Extracted')
 os.makedirs(dir_to_save, exist_ok=True)
 
-gtf_df_filepath = os.path.join('..', 'gencode.annotation.gtf', 'gencode.v36.annotation.tsv')
+gtf_dir_path = os.path.join('..', 'gencode.annotation.gtf')
+gtf_df_filepath = os.path.join(gtf_dir_path, 'gencode.v36.annotation.tsv')
 
 if not os.path.exists(gtf_df_filepath):  # only first time that it's opened, so that next time faster
     print("GTF file upload...\n")
-    gtf = pr.read_gtf(os.path.join("", "gencode.v36.annotation.gtf"))
+    gtf = pr.read_gtf(os.path.join(gtf_dir_path, "gencode.v36.annotation.gtf"))
     genes_pr = gtf[gtf.Feature == "gene"]  # exclude exons, transcripts, UTR, ...
     genes_df = genes_pr.as_df()[['Chromosome', 'Start', 'End', 'gene_id', 'gene_name']]
     genes_df.to_csv(gtf_df_filepath, sep='\t')

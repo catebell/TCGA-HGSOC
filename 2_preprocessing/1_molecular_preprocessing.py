@@ -1,4 +1,5 @@
 import os
+import shutil
 
 import numpy as np
 import pandas as pd
@@ -6,11 +7,9 @@ from tqdm import tqdm
 
 RNA_data_dir = os.path.join("..", "1_dataset", "data_extracted","RNA_extracted")
 dir_to_save_RNA = os.path.join("preprocessed_RNA")
-os.makedirs(dir_to_save_RNA, exist_ok=True)
 
 CNV_data_dir = os.path.join("..", "1_dataset", "data_extracted","CNV_extracted", "Gene_Level_Extracted")
 dir_to_save_CNV = os.path.join("preprocessed_CNV")
-os.makedirs(dir_to_save_CNV, exist_ok=True)
 
 
 def clean_gene_identifiers(df_data, gene_col='gene_id'):
@@ -24,6 +23,10 @@ def clean_gene_identifiers(df_data, gene_col='gene_id'):
 """"" RNA """""
 
 def rna_preprocessing():
+    if os.path.exists(dir_to_save_RNA):
+        shutil.rmtree(dir_to_save_RNA)  # remove dir if already exists
+    os.makedirs(dir_to_save_RNA, exist_ok=True)
+
     for file in tqdm(os.listdir(RNA_data_dir)):
         df_rna = pd.read_csv(os.path.join(RNA_data_dir, file), sep="\t")
 
@@ -53,6 +56,10 @@ def rna_preprocessing():
 """"" CNV """""
 
 def cnv_preprocessing():
+    if os.path.exists(dir_to_save_CNV):
+        shutil.rmtree(dir_to_save_CNV)  # remove dir if already exists
+    os.makedirs(dir_to_save_CNV, exist_ok=True)
+
     for file in tqdm(os.listdir(CNV_data_dir)):
         df_cnv = pd.read_csv(os.path.join(CNV_data_dir, file), sep="\t")
 

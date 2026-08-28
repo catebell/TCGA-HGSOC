@@ -4,7 +4,9 @@ import pandas as pd
 import glob
 from tqdm import tqdm
 
-dir_clinical_data = "GDC-TCGA_Ovary"
+import task_target
+
+dir_clinical_data = f"GDC-TCGA_{task_target.DATASET}"
 dir_to_save = "data_extracted"
 os.makedirs(dir_to_save, exist_ok=True)
 path_to_save = os.path.join(dir_to_save, 'clinical_data.tsv')

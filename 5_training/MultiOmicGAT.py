@@ -37,13 +37,15 @@ class MultiOmicGAT(nn.Module):
         self.norm1 = nn.LayerNorm(hidden_dim * heads)
         self.norm2 = nn.LayerNorm(hidden_dim)
 
-        self.clinical_encoder = nn.Sequential(
-            nn.Linear(num_clinical_features, 32),
-            nn.ReLU(),
-            nn.Dropout(p=dropout)
-        )
+        self.num_clinical_features = num_clinical_features
 
         if num_clinical_features > 0:
+            self.clinical_encoder = nn.Sequential(
+                nn.Linear(num_clinical_features, 32),
+                nn.ReLU(),
+                nn.Dropout(p=dropout)
+            )
+
             #fusion_dim = hidden_dim + 32
             fusion_dim = hidden_dim * 2 + 32
             total_emb_dim = fusion_dim
@@ -86,7 +88,7 @@ class MultiOmicGAT(nn.Module):
         max_pool = global_max_pool(h, batch)
         graph_emb = torch.cat([mean_pool, max_pool], dim=1)  # [Batch_Size, hidden_dim * 2]
 
-        if not clinical_x is None:
+        if self.num_clinical_features > 0 and clinical_x is not None:
             clin_emb = self.clinical_encoder(clinical_x)
             fused_emb = torch.cat([graph_emb, clin_emb], dim=1) # [Batch_Size, hidden_dim * 2 + 32]
             out = self.classifier(fused_emb)

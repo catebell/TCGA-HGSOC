@@ -97,7 +97,7 @@ train_val_dataset = PatientTissueDataset(paths_graphs_splits.get("train_val"), d
 
 num_genes_features = 10  # multiomics feature vector
 num_clinical_features = len(train_val_dataset.clinical_feature_cols)  # total clinical features without the one to predict
-logging.info(f"Clinical Features found : {num_clinical_features} \n {train_dataset.clinical_feature_cols}")
+logging.info(f"Clinical Features found : {num_clinical_features} \n {train_val_dataset.clinical_feature_cols}")
 
 y_target = None
 
@@ -122,7 +122,7 @@ train_idx, val_idx = train_test_split(
 )
 
 if task == 'classification':
-    # classes weights computed used only train dataset # TODO di là
+    # classes weights computed using only train dataset
     y_train_labels = y_target[train_idx]
     class_counts = torch.bincount(y_train_labels)
     total_samples = len(y_train_labels)
@@ -160,8 +160,6 @@ df_clinical_val_processed = nan_imputation_and_features_normalization(
 
 df_clinical_processed = pd.DataFrame(pd.concat([df_clinical_train_processed, df_clinical_val_processed]))
 train_val_dataset.update_clinical_df(df_clinical_processed)
-
-num_clinical_features = len(train_val_dataset.clinical_feature_cols)  # TODO non necessario actually, le colonne da considerare non cambiano
 
 train_dataset = Subset(train_val_dataset, train_idx)
 val_dataset = Subset(train_val_dataset, val_idx)
@@ -265,7 +263,7 @@ best_overall_f1 = 0
 best_overall_metrics = {}
 best_config = {}
 best_overall_c_index = 0
-best_overall_loss = float('inf')  # TODO nel caso
+best_overall_loss = float('inf')  # not used
 
 for i, params in enumerate(combinations):
     logging.info(f"--- GRIDSEARCH TEST {i + 1}/{len(combinations)} | CONFIG: {params} ---\n")
