@@ -1,6 +1,7 @@
 import logging
 import os
 
+import joblib
 import numpy as np
 import pandas as pd
 import torch
@@ -10,10 +11,10 @@ from torch_geometric.loader import DataLoader
 from tqdm import tqdm
 
 import task_target
-from utils import print_details, nan_imputation_and_features_normalization
+from train_eval_utils import print_details, nan_imputation_and_features_normalization
 from PatientTissueDataset import PatientTissueDataset
-from MultiOmicGAT import MultiOmicGAT
-from MultiOmicGATSurvival import MultiOmicGATSurvival, CoxPHLoss
+from models.MultiOmicGAT import MultiOmicGAT
+from models.MultiOmicGATSurvival import MultiOmicGATSurvival, CoxPHLoss
 from train_functions import train_epoch, evaluate, train_epoch_survival, evaluate_survival
 
 
@@ -79,7 +80,7 @@ print_details(train_val_dataset)
 
 """"" set model parameters """""
 
-num_genes_features = 10  # multiomics feature vector
+num_genes_features = train_val_dataset.num_features  # multiomics feature vector
 num_clinical_features = len(train_val_dataset.clinical_feature_cols)  # total clinical features without the one to predict
 logging.info(f"Clinical Features found : {num_clinical_features} \n {train_val_dataset.clinical_feature_cols}")
 
@@ -141,6 +142,16 @@ for fold, (train_idx, val_idx) in enumerate(skf.split(train_val_dataset, y_skf))
         is_train=True,
     )
 
+    # saving preprocessors for evaluation/model usage
+    preprocessors = {
+        'scalers': scalers,
+        'imputers': imputers,
+        'categories': categories,
+        'clinical_feature_cols': train_val_dataset.clinical_feature_cols
+    }
+    prep_save_path = os.path.join(dir_to_save, f"clinical_preprocessors.joblib")
+    joblib.dump(preprocessors, prep_save_path)
+
     df_clinical_val_processed = nan_imputation_and_features_normalization(
         df=df_clinical_val,
         target_col=target_column,
@@ -152,8 +163,7 @@ for fold, (train_idx, val_idx) in enumerate(skf.split(train_val_dataset, y_skf))
 
     df_clinical_processed = pd.DataFrame(pd.concat([df_clinical_train_processed, df_clinical_val_processed]))
     train_val_dataset.update_clinical_df(df_clinical_processed)
-
-    num_clinical_features = len(train_val_dataset.clinical_feature_cols)  # TODO non necessario actually, le colonne da considerare non cambiano
+    num_clinical_features = len(train_val_dataset.clinical_feature_cols)
 
     """"" fold specific dataset separation """""
 
@@ -172,7 +182,7 @@ for fold, (train_idx, val_idx) in enumerate(skf.split(train_val_dataset, y_skf))
             out_channels=num_classes,
             heads=4,
             dropout=0.3,
-            num_clinical_features=num_clinical_features,
+            num_clinical_features=0#num_clinical_features, # todo check luad/lusc con
         ).to(device)
 
     elif task == 'survival':
@@ -182,7 +192,7 @@ for fold, (train_idx, val_idx) in enumerate(skf.split(train_val_dataset, y_skf))
             out_channels=1,
             heads=4,
             dropout=0.3,
-            num_clinical_features=num_clinical_features,
+            num_clinical_features=0#num_clinical_features,
         ).to(device)
 
     logging.info(str(model) + "\n")

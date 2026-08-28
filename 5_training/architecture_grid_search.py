@@ -11,10 +11,10 @@ from torch.utils.data import Subset
 from torch_geometric.loader import DataLoader
 
 import task_target
-from utils import  nan_imputation_and_features_normalization
+from train_eval_utils import  nan_imputation_and_features_normalization
 from PatientTissueDataset import PatientTissueDataset
-from MultiOmicGAT import MultiOmicGAT
-from MultiOmicGATSurvival import MultiOmicGATSurvival, CoxPHLoss
+from models.MultiOmicGAT import MultiOmicGAT
+from models.MultiOmicGATSurvival import MultiOmicGATSurvival, CoxPHLoss
 from train_functions import train_epoch, evaluate, train_epoch_survival, evaluate_survival
 
 

@@ -112,7 +112,8 @@ e_index, gene_to_idx = build_edge_index()  # the same for every subset
 
 splits = {
     "train_val": os.path.join("..", "3_train_test_split", "singles_train_val.csv"),
-    "test": os.path.join("..", "3_train_test_split", "singles_test.csv")
+    "test": os.path.join("..", "3_train_test_split", "singles_test.csv"),
+    "pairs": os.path.join("..", "3_train_test_split", "tissues_pairs.csv"),
 }
 
 for split_name, path_to_mapping_file in splits.items():
