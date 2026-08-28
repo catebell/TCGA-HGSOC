@@ -1,18 +1,19 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch_geometric.nn import GATv2Conv, global_mean_pool, global_max_pool
+from torch_geometric.nn import GATv2Conv, global_mean_pool, global_max_pool, BatchNorm
 
+
+# GATv2Conv: https://pytorch-geometric.readthedocs.io/en/2.7.0/generated/torch_geometric.nn.conv.GATv2Conv.html
+# solves static attention problem mentioned in the original paper
 
 class MultiOmicGAT(nn.Module):
-    def __init__(self, in_features, hidden_dim, out_channels, heads=4, dropout=0.2, num_clinical_features=0):
+    def __init__(self, in_node_features, hidden_dim, out_channels, heads=4, dropout=0.2, num_clinical_features=0):
         super(MultiOmicGAT, self).__init__()
-
-        # GATv2Conv solves static attention problem mentioned in the original paper
 
         # Layer 1: receives node feats (RNA + CNV) and applies multi-head attention
         self.gat1 = GATv2Conv(
-            in_channels=in_features,
+            in_channels=in_node_features,
             out_channels=hidden_dim,
             heads=heads,
             concat=True,  # --> dim = hidden_dim * heads
@@ -21,7 +22,7 @@ class MultiOmicGAT(nn.Module):
         )
 
         # linear projection for residual connection (Skip Connection)
-        self.residual_proj = nn.Linear(in_features, hidden_dim * heads)
+        self.residual_proj = nn.Linear(in_node_features, hidden_dim * heads)
 
         # Layer 2: features compression and genes relation consolidation
         self.gat2 = GATv2Conv(
@@ -65,7 +66,7 @@ class MultiOmicGAT(nn.Module):
 
     def forward(self, x, edge_index, batch=None, clinical_x=None):
         """
-        x: Tensor [N_nodes, in_features] -> Genes features matrix
+        x: Tensor [N_nodes, in_node_features] -> Genes features matrix
         edge_index: Tensor [2, E] -> Adjacency matrix
         batch: Tensor [N_nodes] -> to combine more graphs, observe them together
         """
@@ -73,20 +74,21 @@ class MultiOmicGAT(nn.Module):
         # --- LAYER 1 ---
         h_res = self.residual_proj(x)  # Residual connection
         h = self.gat1(x, edge_index)
-        h = h + h_res
+        h = h + h_res  # TODO maybe invertire questo e normalization?
         h = self.norm1(h)
         h = F.elu(h)  # ELU activation (GAT standard)
-        h = F.dropout(h, p=self.dropout_rate, training=self.training)
+        h = F.dropout(h, p=self.dropout_rate, training=self.training)  # TODO maybe togliere?
 
         # --- LAYER 2 ---
         h = self.gat2(h, edge_index)
-        h = self.norm2(h)
+        h = self.norm2(h)  # add x = x + x_projected
         h = F.elu(h)
 
-        #graph_emb = global_mean_pool(h, batch)
         mean_pool = global_mean_pool(h, batch)
         max_pool = global_max_pool(h, batch)
         graph_emb = torch.cat([mean_pool, max_pool], dim=1)  # [Batch_Size, hidden_dim * 2]
+
+        # todo maybe add x = self.dropout(x)
 
         if self.num_clinical_features > 0 and clinical_x is not None:
             clin_emb = self.clinical_encoder(clinical_x)

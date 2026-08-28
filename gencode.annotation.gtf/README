@@ -1,1 +1,4 @@
+Must be compliant with standard used biological pipeline!
+
 GENCODE annotation file downloaded from: https://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_36/
+-> standard for TCGA dataset on which the project was built and tested.

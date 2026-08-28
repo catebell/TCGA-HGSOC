@@ -177,7 +177,7 @@ for fold, (train_idx, val_idx) in enumerate(skf.split(train_val_dataset, y_skf))
 
     if task == 'classification':
         model = MultiOmicGAT(
-            in_features=num_genes_features,
+            in_node_features=num_genes_features,
             hidden_dim=64,
             out_channels=num_classes,
             heads=4,
@@ -187,7 +187,7 @@ for fold, (train_idx, val_idx) in enumerate(skf.split(train_val_dataset, y_skf))
 
     elif task == 'survival':
         model = MultiOmicGATSurvival(
-            in_features=num_genes_features,
+            in_node_features=num_genes_features,
             hidden_dim=64,
             out_channels=1,
             heads=4,

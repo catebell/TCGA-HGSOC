@@ -37,14 +37,14 @@ class CoxPHLoss(nn.Module):
 
 
 class MultiOmicGATSurvival(nn.Module):
-    def __init__(self, in_features, hidden_dim, out_channels, heads=4, dropout=0.2, num_clinical_features=0):
+    def __init__(self, in_node_features, hidden_dim, out_channels, heads=4, dropout=0.2, num_clinical_features=0):
         super(MultiOmicGATSurvival, self).__init__()
 
         # GATv2Conv solves static attention problem mentioned in the original paper
 
         # Layer 1: receives node feats (RNA + CNV) and applies multi-head attention
         self.gat1 = GATv2Conv(
-            in_channels=in_features,
+            in_channels=in_node_features,
             out_channels=hidden_dim,
             heads=heads,
             concat=True,  # --> dim = hidden_dim * heads
@@ -53,7 +53,7 @@ class MultiOmicGATSurvival(nn.Module):
         )
 
         # linear projection for residual connection (Skip Connection)
-        self.residual_proj = nn.Linear(in_features, hidden_dim * heads)
+        self.residual_proj = nn.Linear(in_node_features, hidden_dim * heads)
 
         # Layer 2: features compression and genes relation consolidation
         self.gat2 = GATv2Conv(
@@ -95,7 +95,7 @@ class MultiOmicGATSurvival(nn.Module):
 
     def forward(self, x, edge_index, batch=None, clinical_x=None):
         """
-        x: Tensor [N_nodes, in_features] -> Genes features matrix
+        x: Tensor [N_nodes, in_node_features] -> Genes features matrix
         edge_index: Tensor [2, E] -> Adjacency matrix
         batch: Tensor [N_nodes] -> to combine more graphs, observe them together
         """

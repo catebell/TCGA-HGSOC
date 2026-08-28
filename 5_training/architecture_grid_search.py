@@ -175,7 +175,7 @@ def train_and_eval_model(params):
 
     if task == 'classification':
         model = MultiOmicGAT(
-            in_features=num_genes_features,
+            in_node_features=num_genes_features,
             hidden_dim=params.get('hidden_channels'),
             out_channels=num_classes,
             heads=4,
@@ -185,7 +185,7 @@ def train_and_eval_model(params):
 
     elif task == 'survival':
         model = MultiOmicGATSurvival(
-            in_features=num_genes_features,
+            in_node_features=num_genes_features,
             hidden_dim=params.get('hidden_channels'),
             out_channels=1,
             heads=4,
