@@ -33,6 +33,8 @@ logging.info("Device: " + str(device))
 
 """"" set general parameters """""
 
+use_clinical = False
+
 task = task_target.TASK
 target_column = ""
 
@@ -84,7 +86,7 @@ num_genes_features = train_val_dataset.num_features  # multiomics feature vector
 num_clinical_features = len(train_val_dataset.clinical_feature_cols)  # total clinical features without the one to predict
 logging.info(f"Clinical Features found : {num_clinical_features} \n {train_val_dataset.clinical_feature_cols}")
 
-epochs = 50
+epochs = 100
 
 
 """"" k-fold train loop """""
@@ -170,8 +172,8 @@ for fold, (train_idx, val_idx) in enumerate(skf.split(train_val_dataset, y_skf))
     train_dataset = Subset(train_val_dataset, train_idx)
     val_dataset = Subset(train_val_dataset, val_idx)
 
-    train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True, num_workers=2)
-    val_loader = DataLoader(val_dataset, batch_size=16, shuffle=False, num_workers=2)
+    train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True)
+    val_loader = DataLoader(val_dataset, batch_size=16, shuffle=False)
 
     model = None
 
@@ -182,7 +184,7 @@ for fold, (train_idx, val_idx) in enumerate(skf.split(train_val_dataset, y_skf))
             out_channels=num_classes,
             heads=4,
             dropout=0.3,
-            num_clinical_features=0#num_clinical_features, # todo check luad/lusc con
+            num_clinical_features=use_clinical * num_clinical_features, # todo check luad/lusc con
         ).to(device)
 
     elif task == 'survival':
@@ -192,7 +194,7 @@ for fold, (train_idx, val_idx) in enumerate(skf.split(train_val_dataset, y_skf))
             out_channels=1,
             heads=4,
             dropout=0.3,
-            num_clinical_features=0#num_clinical_features,
+            num_clinical_features=use_clinical * num_clinical_features,
         ).to(device)
 
     logging.info(str(model) + "\n")
