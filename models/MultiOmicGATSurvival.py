@@ -1,10 +1,11 @@
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
+
+from torch.nn import Dropout, Module, Linear, Sequential, ReLU, LayerNorm
 from torch_geometric.nn import GATv2Conv, global_mean_pool, global_max_pool
 
 
-class CoxPHLoss(nn.Module):
+class CoxPHLoss(Module):
     """
     Cox Proportional Hazards Negative Log-Likelihood Loss
     """
@@ -36,7 +37,7 @@ class CoxPHLoss(nn.Module):
         return loss
 
 
-class MultiOmicGATSurvival(nn.Module):
+class MultiOmicGATSurvival(Module):
     def __init__(self, in_node_features, hidden_dim, out_channels, heads=4, dropout=0.2, num_clinical_features=0):
         super(MultiOmicGATSurvival, self).__init__()
 
@@ -53,7 +54,8 @@ class MultiOmicGATSurvival(nn.Module):
         )
 
         # linear projection for residual connection (Skip Connection)
-        self.residual_proj = nn.Linear(in_node_features, hidden_dim * heads)
+        self.residual_proj1 = Linear(in_node_features, hidden_dim * heads)
+        self.residual_proj2 = Linear(hidden_dim * heads, hidden_dim)
 
         # Layer 2: features compression and genes relation consolidation
         self.gat2 = GATv2Conv(
@@ -66,29 +68,28 @@ class MultiOmicGATSurvival(nn.Module):
         )
 
         # Norm Layer to stabilize training
-        self.norm1 = nn.LayerNorm(hidden_dim * heads)
-        self.norm2 = nn.LayerNorm(hidden_dim)
+        self.norm1 = LayerNorm(hidden_dim * heads)
+        self.norm2 = LayerNorm(hidden_dim)
 
-        self.clinical_encoder = nn.Sequential(
-            nn.Linear(num_clinical_features, 32),
-            nn.ReLU(),
-            nn.Dropout(p=dropout)
-        )
+        self.num_clinical_features = num_clinical_features
 
         if num_clinical_features > 0:
-            #fusion_dim = hidden_dim + 32
+            self.clinical_encoder = Sequential(
+                Linear(num_clinical_features, 32),
+                ReLU(),
+                Dropout(p=dropout)
+            )
             fusion_dim = hidden_dim * 2 + 32
             total_emb_dim = fusion_dim
         else:
-            #total_emb_dim = hidden_dim
             total_emb_dim = hidden_dim * 2
 
         # graph classification/prediction
-        self.classifier = nn.Sequential(
-            nn.Linear(total_emb_dim, hidden_dim // 2),
-            nn.ReLU(),
-            nn.Dropout(p=dropout),
-            nn.Linear(hidden_dim // 2, 1)  # unitary output: Log-Hazard
+        self.classifier = Sequential(
+            Linear(total_emb_dim, hidden_dim // 2),
+            ReLU(),
+            Dropout(p=dropout),
+            Linear(hidden_dim // 2, 1)  # unitary output: Log-Hazard
         )
 
         self.dropout_rate = dropout
@@ -101,24 +102,26 @@ class MultiOmicGATSurvival(nn.Module):
         """
 
         # --- LAYER 1 ---
-        h_res = self.residual_proj(x)  # Residual connection
+        h_res = self.residual_proj1(x)  # Residual connection
         h = self.gat1(x, edge_index)
         h = h + h_res
         h = self.norm1(h)
         h = F.elu(h)  # ELU activation (GAT standard)
-        h = F.dropout(h, p=self.dropout_rate, training=self.training)
 
         # --- LAYER 2 ---
+        h_res = self.residual_proj2(h)  # Residual connection
         h = self.gat2(h, edge_index)
+        h = h + h_res
         h = self.norm2(h)
         h = F.elu(h)
 
-        #graph_emb = global_mean_pool(h, batch)
         mean_pool = global_mean_pool(h, batch)
         max_pool = global_max_pool(h, batch)
         graph_emb = torch.cat([mean_pool, max_pool], dim=1)  # [Batch_Size, hidden_dim * 2]
 
-        if not clinical_x is None:
+        graph_emb = F.dropout(graph_emb, p=self.dropout_rate, training=self.training)
+
+        if self.num_clinical_features > 0 and not clinical_x is None:
             clin_emb = self.clinical_encoder(clinical_x)
             fused_emb = torch.cat([graph_emb, clin_emb], dim=1) # [Batch_Size, hidden_dim * 2 + 32]
             out = self.classifier(fused_emb)
