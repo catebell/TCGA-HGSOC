@@ -1,10 +1,10 @@
-import os
+from os import path
 from sklearn.preprocessing import MultiLabelBinarizer
 
 import task_target
 from utils_clinical_clean_methods import *
 
-path_to_clinical_file = os.path.join('..', '1_dataset', 'data_extracted', 'clinical_data.tsv')
+path_to_clinical_file = path.join('..', '1_dataset', 'data_extracted', 'clinical_data.tsv')
 df_clinical = pd.read_csv(path_to_clinical_file, sep="\t")
 
 
@@ -12,7 +12,7 @@ df_clinical = pd.read_csv(path_to_clinical_file, sep="\t")
 df_clinical = df_clinical[~df_clinical['radiation_therapy'].fillna('').astype(str).str.contains('YES', case=False)]
 
 features_to_keep = [
-    "disease_code",  # TODO check for ovary
+    "disease_code",
     "bcr_patient_barcode",
     "vital_status",
     "age_at_initial_pathologic_diagnosis",

@@ -33,10 +33,9 @@ logging.info("Device: " + str(device))
 
 """"" set general parameters """""
 
-use_clinical = False
+use_clinical = task_target.USE_CLINICAL_DATA
 
 task = task_target.TASK
-target_column = ""
 
 if task == 'classification':
     target_column = task_target.TARGET_COL
@@ -46,7 +45,6 @@ elif task == 'survival':
     logging.info(f"Starting training on survival prediction\n")
 
 path_to_clinical = os.path.join("..", "2_preprocessing", "preprocessed_clinical_data.tsv")
-path_to_clinical_test = os.path.join("..", "3_train_test_split", "processed_clinical.tsv")  # TODO levare
 
 paths_graphs_splits = {
     "train_val": os.path.join("..", "4_samples_graph_creation", "processed_graphs", "train_val"),
@@ -73,9 +71,7 @@ logging.info("Train + Val Dataset init...")
 train_val_dataset = PatientTissueDataset(paths_graphs_splits.get("train_val"), df_clinical_preprocessed, task=task, target_col=target_column)
 
 logging.info("Test Dataset init...")
-df_clinical_test = pd.read_csv(path_to_clinical_test, sep="\t")
-test_dataset = PatientTissueDataset(paths_graphs_splits.get("test"), df_clinical_test, task=task, target_col=target_column)
-test_loader = DataLoader(test_dataset, batch_size=16, shuffle=False)
+test_dataset = PatientTissueDataset(paths_graphs_splits.get("test"), df_clinical_preprocessed, task=task, target_col=target_column)
 
 print_details(train_val_dataset)
 
@@ -129,14 +125,18 @@ fold_results = []
 for fold, (train_idx, val_idx) in enumerate(skf.split(train_val_dataset, y_skf)):
     logging.info(f"\n--- FOLD {fold + 1} ---\n")
 
+    model_name = f"best_{task}_model_fold{fold + 1}.pt"
+
     """"" clinical fold specific processing """""
 
     # retrieving patient ids of current train/val splits from graphs sample ids
     train_samples_ids = ["-".join(train_val_dataset[i].sample_id.split("-")[:3]) for i in train_idx]
     val_samples_ids = ["-".join(train_val_dataset[i].sample_id.split("-")[:3]) for i in val_idx]
+    test_samples_ids = ["-".join(test_dataset[i].sample_id.split("-")[:3]) for i,_ in enumerate(test_dataset)]
 
     df_clinical_train = df_clinical_preprocessed[df_clinical_preprocessed['bcr_patient_barcode'].isin(train_samples_ids)]
     df_clinical_val = df_clinical_preprocessed[df_clinical_preprocessed['bcr_patient_barcode'].isin(val_samples_ids)]
+    df_clinical_test = df_clinical_preprocessed[df_clinical_preprocessed['bcr_patient_barcode'].isin(test_samples_ids)]
 
     df_clinical_train_processed, scalers, imputers, categories = nan_imputation_and_features_normalization(
         df=df_clinical_train,
@@ -151,7 +151,7 @@ for fold, (train_idx, val_idx) in enumerate(skf.split(train_val_dataset, y_skf))
         'categories': categories,
         'clinical_feature_cols': train_val_dataset.clinical_feature_cols
     }
-    prep_save_path = os.path.join(dir_to_save, f"clinical_preprocessors.joblib")
+    prep_save_path = os.path.join(dir_to_save, f"clinical_preprocessors_{task}_fold{fold + 1}.joblib")
     joblib.dump(preprocessors, prep_save_path)
 
     df_clinical_val_processed = nan_imputation_and_features_normalization(
@@ -162,20 +162,32 @@ for fold, (train_idx, val_idx) in enumerate(skf.split(train_val_dataset, y_skf))
         imputers=imputers,
         categories=categories,
     )
-
     df_clinical_processed = pd.DataFrame(pd.concat([df_clinical_train_processed, df_clinical_val_processed]))
     train_val_dataset.update_clinical_df(df_clinical_processed)
     num_clinical_features = len(train_val_dataset.clinical_feature_cols)
 
-    """"" fold specific dataset separation """""
+    df_clinical_test_processed = nan_imputation_and_features_normalization(
+        df=df_clinical_test,
+        target_col=target_column,
+        is_train=False,
+        scalers=scalers,
+        imputers=imputers,
+        categories=categories,
+    )
+    test_dataset.update_clinical_df(df_clinical_test_processed )
+
+
+    """"" fold specific dataset separation and DataLoader """""
 
     train_dataset = Subset(train_val_dataset, train_idx)
     val_dataset = Subset(train_val_dataset, val_idx)
 
     train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True)
     val_loader = DataLoader(val_dataset, batch_size=16, shuffle=False)
+    test_loader = DataLoader(test_dataset, batch_size=16, shuffle=False)
 
-    model = None
+
+    """"" task specific model upload """""
 
     if task == 'classification':
         model = MultiOmicGAT(
@@ -184,7 +196,7 @@ for fold, (train_idx, val_idx) in enumerate(skf.split(train_val_dataset, y_skf))
             out_channels=num_classes,
             heads=4,
             dropout=0.3,
-            num_clinical_features=use_clinical * num_clinical_features, # todo check luad/lusc con
+            num_clinical_features=num_clinical_features if use_clinical else 0,
         ).to(device)
 
     elif task == 'survival':
@@ -193,8 +205,8 @@ for fold, (train_idx, val_idx) in enumerate(skf.split(train_val_dataset, y_skf))
             hidden_dim=64,
             out_channels=1,
             heads=4,
-            dropout=0.3,
-            num_clinical_features=use_clinical * num_clinical_features,
+            dropout_rate=0.3,
+            num_clinical_features=num_clinical_features if use_clinical else 0,
         ).to(device)
 
     logging.info(str(model) + "\n")
@@ -205,6 +217,9 @@ for fold, (train_idx, val_idx) in enumerate(skf.split(train_val_dataset, y_skf))
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=10)
     elif task == 'survival':
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='max', factor=0.5, patience=5)
+
+
+    """"" fold train loop """""
 
     # possible metrics to evaluate for improvement
     best_val_loss = float('inf')  # minimizing loss
@@ -224,7 +239,7 @@ for fold, (train_idx, val_idx) in enumerate(skf.split(train_val_dataset, y_skf))
             if val_loss < best_val_loss:
                 logging.info("Loss IMPROVEMENT!\n")
                 best_val_loss = val_loss
-                torch.save(model.state_dict(), os.path.join(dir_to_save, f"best_MultiOmicGat_fold{fold + 1}.pt"))
+                torch.save(model.state_dict(), os.path.join(dir_to_save, model_name))
                 early_stopping_counter = 0
             else:
                 early_stopping_counter += 1
@@ -245,7 +260,7 @@ for fold, (train_idx, val_idx) in enumerate(skf.split(train_val_dataset, y_skf))
                 logging.info(
                     f"--> C-Index IMPROVEMENT!: {best_val_c_index:.4f} -> {val_c_index:.4f}\n")
                 best_val_c_index = val_c_index
-                torch.save(model.state_dict(), os.path.join(dir_to_save, f"best_survival_GAT_fold{fold + 1}.pt"))
+                torch.save(model.state_dict(), os.path.join(dir_to_save, model_name))
                 early_stopping_counter = 0
             else:
                 early_stopping_counter += 1
@@ -253,3 +268,62 @@ for fold, (train_idx, val_idx) in enumerate(skf.split(train_val_dataset, y_skf))
         if early_stopping_counter > 20:
             logging.info("--- Stopping training due to early stopping, 20 epochs without improvement ---\n")
             break
+
+    best_model_path = os.path.join(dir_to_save, model_name)
+    model.load_state_dict(torch.load(best_model_path, map_location=device))
+    model.eval()
+
+    if task == 'classification':
+        test_loss, test_metrics = evaluate(device, model, test_loader, criterion)
+        logging.info(
+            f"Fold {fold + 1} Test Loss: {test_loss:.4f} | "
+            f"Test Acc: {test_metrics['acc']:.4f} | "
+            f"Test F1: {test_metrics['f1']:.4f} | "
+            f"Test AUC: {test_metrics['auc']:.4f}\n"
+        )
+        fold_results.append({
+            'fold': fold + 1,
+            'test_loss': test_loss,
+            'acc': test_metrics['acc'],
+            'f1': test_metrics['f1'],
+            'auc': test_metrics['auc']
+        })
+
+    elif task == 'survival':
+        test_loss, test_metrics = evaluate_survival(device, model, test_loader, criterion)
+        logging.info(
+            f"Fold {fold + 1} Test Loss: {test_loss:.4f} | "
+            f"Test C-Index: {test_metrics['c_index']:.4f}\n"
+        )
+        fold_results.append({
+            'fold': fold + 1,
+            'test_loss': test_loss,
+            'c_index': test_metrics['c_index']
+        })
+
+
+""""" folds aggregate evaluation """""
+
+df_fold_results = pd.DataFrame(fold_results)
+
+if task == 'classification':
+    avg_acc = df_fold_results['acc'].mean()
+    std_acc = df_fold_results['acc'].std()
+    avg_f1 = df_fold_results['f1'].mean()
+    std_f1 = df_fold_results['f1'].std()
+    avg_auc = df_fold_results['auc'].mean()
+    std_auc = df_fold_results['auc'].std()
+
+    logging.info(f"Accuracy:  {avg_acc:.4f} ± {std_acc:.4f}")
+    logging.info(f"F1 Score:  {avg_f1:.4f} ± {std_f1:.4f}")
+    logging.info(f"ROC AUC:   {avg_auc:.4f} ± {std_auc:.4f}")
+
+elif task == 'survival':
+    avg_c_index = df_fold_results['c_index'].mean()
+    std_c_index = df_fold_results['c_index'].std()
+
+    logging.info(f"C-Index:   {avg_c_index:.4f} ± {std_c_index:.4f}")
+
+df_fold_results.to_csv(os.path.join(dir_to_save, f"report_kfold_test_results_{task}.csv"), index=False)  # final report saved
+
+logging.info("DONE\n")
